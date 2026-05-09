@@ -20,7 +20,7 @@ except ImportError:
 #  НАСТРОЙКИ — заполни своими данными
 # ============================================================
 import os
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")   # Вставь токен от @BotFather
+BOT_TOKEN = os.environ.get("BOT_TOKEN")   # Вставь токен от @BotFather
 CHAT_ID   = "213900350"          # Твой Chat ID
 
 SEND_TIME_MORNING = "06:00"
