@@ -1,11 +1,13 @@
-import feedparser
-import asyncio
-import schedule
+import os
+import re
 import time
 import logging
-import re
+import asyncio
 import urllib.request
 from datetime import datetime
+
+import feedparser
+import schedule
 from telegram import Bot
 from telegram.constants import ParseMode
 
@@ -17,15 +19,15 @@ except ImportError:
     logging.warning("trafilatura не установлен. Запусти: pip install trafilatura")
 
 # ============================================================
-#  НАСТРОЙКИ — заполни своими данными
+#  НАСТРОЙКИ
 # ============================================================
-import os
-BOT_TOKEN = os.environ.get("BOT_TOKEN")   # Вставь токен от @BotFather
-CHAT_ID   = "213900350"          # Твой Chat ID
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = "213900350"
 
-SEND_TIME_MORNING = "06:00"
-SEND_TIME_EVENING = "20:00"  # Время отправки
-SUMMARY_LENGTH = 500       # Максимальная длина саммари (символов)
+SEND_TIME_MORNING = "03:00"  # 06:00 по Москве (UTC+3 = UTC-0 смещение -3ч)
+SEND_TIME_EVENING = "17:00"  # 20:00 по Москве
+
+SUMMARY_LENGTH = 500
 # ============================================================
 
 logging.basicConfig(
@@ -73,17 +75,16 @@ FEEDS = {
         "emoji": "🎬",
         "count": 2,
         "urls": [
-            "https://www.eurogamer.net/feed",                          # Игры
-            "https://www.rockpapershotgun.com/feed",                   # Игры
-            "https://www.hollywoodreporter.com/feed/",                 # Кино
-            "https://collider.com/feed/",                              # Кино + сериалы
+            "https://www.eurogamer.net/feed",
+            "https://www.rockpapershotgun.com/feed",
+            "https://www.hollywoodreporter.com/feed/",
+            "https://collider.com/feed/",
         ],
     },
 }
 
 
-def get_summary_from_url(url: str) -> str:
-    """Скачивает страницу и извлекает текст через trafilatura."""
+def get_summary_from_url(url):
     if not TRAFILATURA_AVAILABLE:
         return ""
     try:
@@ -108,17 +109,17 @@ def get_summary_from_url(url: str) -> str:
         return ""
 
 
-def clean_html(text: str) -> str:
+def clean_html(text):
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-def escape_md(text: str) -> str:
+def escape_md(text):
     for ch in ["*", "_", "`", "["]:
         text = text.replace(ch, "\\" + ch)
     return text
 
 
-def trim_summary(text: str) -> str:
+def trim_summary(text):
     if len(text) <= SUMMARY_LENGTH:
         return text
     text = text[:SUMMARY_LENGTH]
@@ -128,10 +129,9 @@ def trim_summary(text: str) -> str:
     return text.rstrip() + "..."
 
 
-def fetch_articles(urls: list[str], count: int) -> list[dict]:
+def fetch_articles(urls, count):
     articles = []
     seen_titles = set()
-
     for url in urls:
         if len(articles) >= count:
             break
@@ -141,15 +141,13 @@ def fetch_articles(urls: list[str], count: int) -> list[dict]:
                 if len(articles) >= count:
                     break
                 title = entry.get("title", "").strip()
-                link  = entry.get("link", "").strip()
+                link = entry.get("link", "").strip()
                 if not title or not link or title in seen_titles:
                     continue
                 seen_titles.add(title)
-
                 rss_summary = clean_html(
                     entry.get("summary", "") or entry.get("description", "")
                 )
-
                 articles.append({
                     "title": title,
                     "link": link,
@@ -157,18 +155,16 @@ def fetch_articles(urls: list[str], count: int) -> list[dict]:
                 })
         except Exception as e:
             log.warning(f"Не удалось получить {url}: {e}")
-
     return articles
 
 
-def build_message() -> str:
+def build_message():
     today = datetime.now().strftime("%A, %B %d %Y")
     messages = [f"📰 *Your Daily News Digest*\n_{today}_"]
 
     for category, cfg in FEEDS.items():
         log.info(f"Загружаю категорию: {cfg['label']}...")
         articles = fetch_articles(cfg["urls"], cfg["count"])
-
         section = f"\n\n{cfg['emoji']} *{cfg['label']}*\n" + "─" * 20
 
         if not articles:
@@ -176,14 +172,11 @@ def build_message() -> str:
         else:
             for i, art in enumerate(articles, 1):
                 title = escape_md(art["title"])
-
                 summary = art["rss_summary"]
                 if not summary:
                     log.info(f"  Получаю текст со страницы: {art['title'][:50]}...")
                     summary = get_summary_from_url(art["link"])
-
                 summary_text = escape_md(summary) if summary else "_Краткое описание недоступно_"
-
                 section += (
                     f"\n\n*{i}. {title}*\n"
                     f"{summary_text}\n"
@@ -196,13 +189,13 @@ def build_message() -> str:
     return "".join(messages)
 
 
-async def send_news() -> None:
+async def send_news():
     log.info("Отправляю новости...")
     try:
         bot = Bot(token=BOT_TOKEN)
         text = build_message()
-
         max_len = 4096
+
         if len(text) <= max_len:
             await bot.send_message(
                 chat_id=CHAT_ID,
@@ -238,22 +231,15 @@ async def send_news() -> None:
         log.error(f"Ошибка при отправке: {e}")
 
 
-def job() -> None:
+def job():
     asyncio.run(send_news())
 
 
-# ============================================================
-#  Запуск
-# ============================================================
 if __name__ == "__main__":
-    log.info(f"Бот запущен. Новости будут отправляться в {SEND_TIME_MORNING} и {SEND_TIME_EVENING} каждый день.")
+    log.info(f"Бот запущен. Новости в {SEND_TIME_MORNING} и {SEND_TIME_EVENING} UTC.")
 
-    # Отправить сразу при старте (для теста)
-    job()
-
-    # Расписание
     schedule.every().day.at(SEND_TIME_MORNING).do(job)
-schedule.every().day.at(SEND_TIME_EVENING).do(job)
+    schedule.every().day.at(SEND_TIME_EVENING).do(job)
 
     while True:
         schedule.run_pending()
